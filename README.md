@@ -9,7 +9,12 @@ ICG_25_FinalProject/
 ├── CMakeLists.txt
 ├── src/                
 │   ├── header/           <-- Unzip header.zip content here
-│   └── asset/            <-- Unzip asset.zip content here
+│   ├── asset/            <-- Unzip asset.zip content here
+│   ├── shaders/   
+│   ├── CMakeList.txt
+│   ├── main.cpp
+│   ├── shaders.cpp
+│   └── stb_image.cpp          
 ├── extern/               <-- Unzip extern.zip content here  
 └── build/                (If it doen't exist, don't worry)
     
