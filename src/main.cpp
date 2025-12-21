@@ -86,14 +86,16 @@ void model_setup(){
     std::string texture_path = "..\\..\\src\\asset\\texture\\Mei_TEX.png";
 #else
     std::string obj_path = "..\\..\\src\\asset\\obj\\LMQ.obj";
+    std::string mtlbase_path = "..\\..\\src\\asset\\material\\";
+    std::string texbase_path = "..\\..\\src\\asset\\texture\\LMQ\\";
     // std::string texture_path = "..\\..\\src\\asset\\texture\\violin\\violin_TEX.png";
-    std::string texture_path = "..\\..\\src\\asset\\texture\\LMQ\\IMG_6044.png";
+    // std::string texture_path = "..\\..\\src\\asset\\texture\\LMQ\\IMG_6044.png";
     std::string cube_obj_path = "..\\..\\src\\asset\\obj\\cube.obj";
 #endif
 
-    staticModel = new Object(obj_path);
-    staticModel->loadTexture(texture_path);
-    cubeModel = new Object(cube_obj_path);
+    staticModel = new Object(obj_path, mtlbase_path, texbase_path);
+    // staticModel->loadTexture(texture_path);
+    // cubeModel = new Object(cube_obj_path, mtlbase_path);
 
     modelMatrix = glm::mat4(1.0f);
     modelMatrix = glm::scale(modelMatrix, glm::vec3(100.0f));
@@ -259,6 +261,9 @@ void render(){
     shaderPrograms[shaderProgramIndex]->set_uniform_value("projection", projection);
     shaderPrograms[shaderProgramIndex]->set_uniform_value("viewPos", camera.position - glm::vec3(0.0f, 0.2f, 0.1f));
 
+
+    shaderPrograms[shaderProgramIndex]->set_uniform_value("ourTexture", 0);
+    
     // TODO: set additional uniform value for shader program
     shaderPrograms[shaderProgramIndex]->set_uniform_value("lightPos", light.position);
     shaderPrograms[shaderProgramIndex]->set_uniform_value("lightAmbient", light.ambient);
