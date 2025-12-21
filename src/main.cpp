@@ -10,6 +10,7 @@
 #include "header/Object.h"
 #include "header/shader.h"
 #include "header/stb_image.h"
+#include "header/waterplane.h"
 
 void framebufferSizeCallback(GLFWwindow *window, int width, int height);
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
@@ -18,19 +19,6 @@ void updateCamera();
 void applyOrbitDelta(float yawDelta, float pitchDelta, float radiusDelta);
 unsigned int loadCubemap(std::vector<std::string> &mFileName);
 
-struct material_t{
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec3 specular;
-    float gloss;
-};
-
-struct light_t{
-    glm::vec3 position;
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec3 specular;
-};
 
 struct camera_t{
     glm::vec3 position;
@@ -57,23 +45,26 @@ struct camera_t{
 int SCR_WIDTH = 800;
 int SCR_HEIGHT = 600;
 
-// cube map 
-unsigned int cubemapTexture;
-unsigned int cubemapVAO, cubemapVBO;
 
 // shader programs 
-int shaderProgramIndex = 0;
-std::vector<shader_program_t*> shaderPrograms;
-shader_program_t* cubemapShader;
+shader_program_t* carShader;
+shader_program_t* waterplaneShader;
 
-light_t light;
-material_t material;
+
 camera_t camera;
 
-Object* staticModel = nullptr;
+Object* carModel = nullptr;
 Object* cubeModel = nullptr;
-bool isCube = false;
-glm::mat4 modelMatrix(1.0f);
+
+
+
+// waterplane
+WaterPlane* waterplaneModel = nullptr;
+
+
+// Mcqueen Status
+float car_speed = 3.0f;
+glm::vec3 car_position = glm::vec3(0.0f, 0.0f, 0.0f);
 
 float currentTime = 0.0f;
 float deltaTime = 0.0f;
@@ -88,17 +79,14 @@ void model_setup(){
     std::string obj_path = "..\\..\\src\\asset\\obj\\LMQ.obj";
     std::string mtlbase_path = "..\\..\\src\\asset\\material\\";
     std::string texbase_path = "..\\..\\src\\asset\\texture\\LMQ\\";
-    // std::string texture_path = "..\\..\\src\\asset\\texture\\violin\\violin_TEX.png";
-    // std::string texture_path = "..\\..\\src\\asset\\texture\\LMQ\\IMG_6044.png";
+
     std::string cube_obj_path = "..\\..\\src\\asset\\obj\\cube.obj";
 #endif
 
-    staticModel = new Object(obj_path, mtlbase_path, texbase_path);
-    // staticModel->loadTexture(texture_path);
-    // cubeModel = new Object(cube_obj_path, mtlbase_path);
+    carModel = new Object(obj_path, mtlbase_path, texbase_path);
+    waterplaneModel = new WaterPlane(1000, 50);
 
-    modelMatrix = glm::mat4(1.0f);
-    modelMatrix = glm::scale(modelMatrix, glm::vec3(100.0f));
+
 }
 
 void camera_setup(){
@@ -108,13 +96,16 @@ void camera_setup(){
     camera.radius = 400.0f;
     camera.minRadius = 150.0f;
     camera.maxRadius = 800.0f;
-    camera.orbitRotateSpeed = 60.0f;
-    camera.orbitZoomSpeed = 400.0f;
+    // camera.orbitRotateSpeed = 60.0f;
+    camera.orbitRotateSpeed = 0.0f;
+    // camera.orbitZoomSpeed = 400.0f;
+    camera.orbitZoomSpeed = 0.0f;
     camera.minOrbitPitch = -80.0f;
     camera.maxOrbitPitch = 80.0f;
-    camera.target = glm::vec3(0.0f);
-    camera.enableAutoOrbit = true;
-    camera.autoOrbitSpeed = 20.0f;
+    camera.target = glm::vec3(0.0f, 0.0f, 0.0f);
+    camera.enableAutoOrbit = false;
+    // camera.autoOrbitSpeed = 20.0f;
+    camera.autoOrbitSpeed = 0.0f;
 
     updateCamera();
 }
@@ -140,19 +131,7 @@ void applyOrbitDelta(float yawDelta, float pitchDelta, float radiusDelta) {
     updateCamera();
 }
 
-void light_setup(){
-    light.position = glm::vec3(1000.0, 1000.0, 0.0);
-    light.ambient = glm::vec3(1.0);
-    light.diffuse = glm::vec3(1.0);
-    light.specular = glm::vec3(1.0);
-}
 
-void material_setup(){
-    material.ambient = glm::vec3(0.5);
-    material.diffuse = glm::vec3(1.0);
-    material.specular = glm::vec3(0.7);
-    material.gloss = 50.0;
-}
 
 void shader_setup(){
 #if defined(__linux__) || defined(__APPLE__)
@@ -161,73 +140,34 @@ void shader_setup(){
     std::string shaderDir = "..\\..\\src\\shaders\\";
 #endif
 
-    // std::vector<std::string> shadingMethod = {
-    //     "default", "bling-phong"
-    // };
+    // setup waterplane shader
+    std::string vpath = shaderDir + "waterplane.vert";
+    std::string fpath = shaderDir + "waterplane.frag";
+    waterplaneShader = new shader_program_t();
+    waterplaneShader->create();
+    waterplaneShader->add_shader(vpath, GL_VERTEX_SHADER);
+    waterplaneShader->add_shader(fpath, GL_FRAGMENT_SHADER);
+    waterplaneShader->link_shader();
 
-    std::vector<std::string> shadingMethod = {
-        "default", "bling-phong", "gouraud", "metallic", "glass_schlick"
-    };
+    // setup car shader
+    vpath = shaderDir + "car.vert";
+    fpath = shaderDir + "car.frag";
 
-    for(int i=0; i<shadingMethod.size(); i++){
-        std::string vpath = shaderDir + shadingMethod[i] + ".vert";
-        std::string fpath = shaderDir + shadingMethod[i] + ".frag";
+    carShader = new shader_program_t();
+    carShader->create();
+    carShader->add_shader(vpath, GL_VERTEX_SHADER);
+    carShader->add_shader(fpath, GL_FRAGMENT_SHADER);
+    carShader->link_shader();
 
-        shader_program_t* shaderProgram = new shader_program_t();
-        shaderProgram->create();
-        shaderProgram->add_shader(vpath, GL_VERTEX_SHADER);
-        shaderProgram->add_shader(fpath, GL_FRAGMENT_SHADER);
-        shaderProgram->link_shader();
-        shaderPrograms.push_back(shaderProgram);
-    }
 }
 
-void cubemap_setup(){
-#if defined(__linux__) || defined(__APPLE__)
-    std::string cubemapDir = "..\\..\\src\\asset\\texture\\skybox\\";
-    std::string shaderDir = "..\\..\\src\\shaders\\";
-#else
-    std::string cubemapDir = "..\\..\\src\\asset\\texture\\skybox\\";
-    std::string shaderDir = "..\\..\\src\\shaders\\";
-#endif
 
-    std::vector<std::string> faces
-    {
-        cubemapDir + "right.jpg",
-        cubemapDir + "left.jpg",
-        cubemapDir + "top.jpg",
-        cubemapDir + "bottom.jpg",
-        cubemapDir + "front.jpg",
-        cubemapDir + "back.jpg"
-    };
-    cubemapTexture = loadCubemap(faces);   
-
-    std::string vpath = shaderDir + "cubemap.vert";
-    std::string fpath = shaderDir + "cubemap.frag";
-    
-    cubemapShader = new shader_program_t();
-    cubemapShader->create();
-    cubemapShader->add_shader(vpath, GL_VERTEX_SHADER);
-    cubemapShader->add_shader(fpath, GL_FRAGMENT_SHADER);
-    cubemapShader->link_shader();
-
-    glGenVertexArrays(1, &cubemapVAO);
-    glGenBuffers(1, &cubemapVBO);
-    glBindVertexArray(cubemapVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, cubemapVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cubemapVertices), &cubemapVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glBindVertexArray(0);
-}
 
 void setup(){
-    light_setup();
+
     model_setup();
     shader_setup();
     camera_setup();
-    cubemap_setup();
-    material_setup();
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
@@ -245,76 +185,69 @@ void update(){
         float yawDelta = camera.autoOrbitSpeed * deltaTime;
         applyOrbitDelta(yawDelta, 0.0f, 0.0f);
     }
+    
+    car_position.x += car_speed * deltaTime;
+
+    // Position camera behind the car for a chase view.
+    const glm::vec3 carDirection = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));
+    const float followDistance = 150.0f;
+    const float heightOffset = 45.0f;
+    const float lookAhead = 25.0f;
+
+    camera.target = car_position + carDirection * lookAhead;
+    camera.position = car_position - carDirection * followDistance + glm::vec3(0.0f, heightOffset, 0.0f);
+    camera.front = glm::normalize(camera.target - camera.position);
+    camera.right = glm::normalize(glm::cross(camera.front, camera.worldUp));
+    camera.up = glm::normalize(glm::cross(camera.right, camera.front));
+
 }
 
 void render(){
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glm::mat4 view = glm::lookAt(camera.position - glm::vec3(0.0f, 0.2f, 0.1f), camera.position + camera.front, camera.up);
+    // render car
+    glm::mat4 view = glm::lookAt(camera.position, car_position, camera.up);
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 1000.0f);
+    glm::mat4 carMatrix(1.0f);
+    carMatrix = glm::translate(carMatrix, car_position);
+    carMatrix = glm::rotate(carMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    carMatrix = glm::scale(carMatrix, glm::vec3(20.0f));
+    carShader->use();
 
-    // set matrix for view, projection, model transformation
-    shaderPrograms[shaderProgramIndex]->use();
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("model", modelMatrix);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("view", view);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("projection", projection);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("viewPos", camera.position - glm::vec3(0.0f, 0.2f, 0.1f));
+    carShader->set_uniform_value("model", carMatrix);
+    carShader->set_uniform_value("view", view);
+    carShader->set_uniform_value("projection", projection);
 
-
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("ourTexture", 0);
-    
-    // TODO: set additional uniform value for shader program
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("lightPos", light.position);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("lightAmbient", light.ambient);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("lightDiffuse", light.diffuse);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("lightSpecular", light.specular);
-
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("materialAmbient", material.ambient);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("materialDiffuse", material.diffuse);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("materialSpecular", material.specular);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("materialShininess", material.gloss);
-
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("AIR_coeff", 1.0f);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("GLASS_coeff", 1.52f);
-    shaderPrograms[shaderProgramIndex]->set_uniform_value("steps", 3.0f);
+    carShader->set_uniform_value("ourTexture", 0);
     
 
+    carModel->draw();
+    carShader->release();
 
-    // specifying sampler for shader program
+    // render waterplane
+    glm::mat4 waterMatrix(1.0f);
+    waterMatrix = glm::scale(waterMatrix, glm::vec3(200.0f, 1.0f, 200.0f));
+    waterplaneShader->use();
+    waterplaneShader->set_uniform_value("model", waterMatrix);
+    waterplaneShader->set_uniform_value("view", view);
+    waterplaneShader->set_uniform_value("projection", projection);
 
-    if(isCube)
-        cubeModel->draw();
-    else
-        staticModel->draw();
+    // waterplaneShader->set_uniform_value("cameraPos", camera.position - glm::vec3(0.0f, 0.2f, 0.1f));
+    
+    waterplaneShader->set_uniform_value("waterColor", glm::vec3(0.0f, 0.35f, 0.45f));
+    waterplaneShader->set_uniform_value("fogColor",   glm::vec3(0.6f, 0.7f, 0.8f));
+    waterplaneShader->set_uniform_value("maxDist", 120.0f);
+    waterplaneShader->set_uniform_value("fadeWidth", 30.0f);
 
-    shaderPrograms[shaderProgramIndex]->release();
+    waterplaneModel->draw();
+    waterplaneShader->release();
 
-    // TODO 
-    // Rendering cubemap environment
-    // Hint:
-    // 1. All the needed things are already set up in cubemap_setup() function.
-    // 2. You can use the vertices in cubemapVertices provided in the header/cube.h
-    // 3. You can use the cubemapShader to render the cubemap 
-    //    (refer to the above code to get an idea of how to use the shader program)
 
     glDepthMask(GL_FALSE);
     glDepthFunc(GL_LEQUAL);
     glDisable(GL_CULL_FACE);
 
-    cubemapShader->use();
-    glm::mat4 viewNoTranslation = glm::mat4(glm::mat3(view));
-    cubemapShader->set_uniform_value("view", viewNoTranslation);
-    cubemapShader->set_uniform_value("projection", projection);
-    cubemapShader->set_uniform_value("skybox", 0);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
-    glBindVertexArray(cubemapVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-    glBindVertexArray(0);
-
-    cubemapShader->release();
 
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
@@ -361,12 +294,11 @@ int main() {
         glfwPollEvents();
     }
 
-    delete staticModel;
-    delete cubeModel;
-    for (auto shader : shaderPrograms) {
-        delete shader;
-    }
-    delete cubemapShader;
+    delete carModel;
+    delete waterplaneModel;
+    
+    delete carShader;
+    delete waterplaneShader;
 
     glfwTerminate();
     return 0;
@@ -401,30 +333,22 @@ void processInput(GLFWwindow *window) {
 }
 
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
+    (void)window;
+    (void)scancode;
+    (void)mods;
 
-    if (key == GLFW_KEY_0 && (action == GLFW_REPEAT || action == GLFW_PRESS)) 
-        shaderProgramIndex = 0;
-    if (key == GLFW_KEY_1 && (action == GLFW_REPEAT || action == GLFW_PRESS)) 
-        shaderProgramIndex = 1;
-    if (key == GLFW_KEY_2 && (action == GLFW_REPEAT || action == GLFW_PRESS)) 
-        shaderProgramIndex = 2;
-    if (key == GLFW_KEY_3 && action == GLFW_PRESS)
-        shaderProgramIndex = 3;
-    if (key == GLFW_KEY_4 && action == GLFW_PRESS)
-        shaderProgramIndex = 4;
-    if (key == GLFW_KEY_5 && action == GLFW_PRESS)
-        shaderProgramIndex = 5;
-    if (key == GLFW_KEY_6 && action == GLFW_PRESS)
-        shaderProgramIndex = 6;
-    if (key == GLFW_KEY_7 && action == GLFW_PRESS)
-        shaderProgramIndex = 7;
-    if (key == GLFW_KEY_8 && action == GLFW_PRESS)
-        shaderProgramIndex = 8;
-    if( key == GLFW_KEY_9 && action == GLFW_PRESS)
-        isCube = !isCube;
+    if (action != GLFW_PRESS)
+        return;
+
+    if (key == GLFW_KEY_O) {
+        camera.enableAutoOrbit = !camera.enableAutoOrbit;
+        if (camera.enableAutoOrbit && camera.autoOrbitSpeed == 0.0f)
+            camera.autoOrbitSpeed = 20.0f;
+        else if (!camera.enableAutoOrbit)
+            camera.autoOrbitSpeed = 0.0f;
+    }
 }
+
 
 void framebufferSizeCallback(GLFWwindow *window, int width, int height) {
     glViewport(0, 0, width, height);
@@ -432,35 +356,3 @@ void framebufferSizeCallback(GLFWwindow *window, int width, int height) {
     SCR_HEIGHT = height;
 }
 
-unsigned int loadCubemap(vector<std::string>& faces)
-{
-    unsigned int texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
-
-    int width, height, nrChannels;
-    for (unsigned int i = 0; i < faces.size(); i++)
-    {
-        stbi_set_flip_vertically_on_load(false);
-        unsigned char *data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
-        if (data)
-        {
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
-                         0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data
-            );
-            stbi_image_free(data);
-        }
-        else
-        {
-            std::cout << "Cubemap tex failed to load at path: " << faces[i] << std::endl;
-            stbi_image_free(data);
-        }
-    }
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-
-    return texture;
-}  
