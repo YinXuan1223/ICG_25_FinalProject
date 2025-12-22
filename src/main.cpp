@@ -12,6 +12,8 @@
 #include "header/shader.h"
 #include "header/stb_image.h"
 #include "header/waterplane.h"
+#include "header/splash.h"
+
 
 
 void framebufferSizeCallback(GLFWwindow *window, int width, int height);
@@ -31,11 +33,13 @@ int SCR_HEIGHT = 600;
 
 shader_program_t* carShader        = nullptr;
 shader_program_t* waterplaneShader = nullptr;
+shader_program_t* splashShader     = nullptr;
 
 camera_t camera;
 
 Object*     carModel        = nullptr;
 WaterPlane* waterplaneModel = nullptr;
+SplashSystem* splash = nullptr;
 
 // car status
 float car_speed      = 150.0f;               
@@ -67,7 +71,7 @@ void model_setup() {
 void camera_setup() {
     camera.worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
-    camera.position = glm::vec3(0.0f, 250.0f, 400.0f);
+    camera.position = glm::vec3(0.0f, 400.0f, 400.0f);
     camera.target   = glm::vec3(0.0f);
     camera.up       = glm::vec3(0.0f, 1.0f, 0.0f);
 }
@@ -92,6 +96,16 @@ void shader_setup() {
     carShader->add_shader(vpath, GL_VERTEX_SHADER);
     carShader->add_shader(fpath, GL_FRAGMENT_SHADER);
     carShader->link_shader();
+
+    std::string gpath = shaderDir + "splash.geom";
+    vpath = shaderDir + "splash.vert";
+    fpath = shaderDir + "splash.frag";
+    splashShader = new shader_program_t();
+    splashShader->create();
+    splashShader->add_shader(vpath, GL_VERTEX_SHADER);
+    splashShader->add_shader(fpath, GL_FRAGMENT_SHADER);
+    splashShader->add_shader(gpath, GL_GEOMETRY_SHADER);
+    splashShader->link_shader();
 }
 
 void setup() {
@@ -105,6 +119,9 @@ void setup() {
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
+
+    splash = new SplashSystem();
+    splash->init();
 }
 
 
@@ -114,6 +131,21 @@ void update() {
     lastFrame = currentFrame;
 
     car_position += car_velocity * deltaTime;
+
+    float waterY = 0.0f; 
+    bool onWater = (car_position.y <= waterY + 0.05f);
+
+    if (onWater) {
+        glm::vec3 wheelL = car_position + glm::vec3( 15.0f, 0.5f,  0.0f);
+        glm::vec3 wheelR = car_position + glm::vec3(-15.0f, 0.5f,  0.0f);
+
+        splash->spawn(wheelL, currentFrame, 2);
+        splash->spawn(wheelR, currentFrame, 2);
+
+    }
+
+    splash->cullDead(currentFrame);
+    splash->upload();
 }
 
 void render() {
@@ -158,6 +190,31 @@ void render() {
     waterplaneShader->set_uniform_value("waterColor", glm::vec3(0.6f, 0.7f, 0.8f));
     waterplaneModel->draw();
     waterplaneShader->release();
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // 建議：透明物件不要寫入 depth（避免怪遮擋）
+    glDepthMask(GL_FALSE);
+
+    // 建議：避免被背面剔除
+    glDisable(GL_CULL_FACE);
+
+    splashShader->use();
+    splashShader->set_uniform_value("view", view);
+    splashShader->set_uniform_value("projection", projection);
+    splashShader->set_uniform_value("cameraPos", camera.position);
+    splashShader->set_uniform_value("time", (float)glfwGetTime());
+    splashShader->set_uniform_value("life", 0.5f);
+
+    splash->drawPoints();
+
+    splashShader->release();
+
+    glEnable(GL_CULL_FACE);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+
 }
 
 
@@ -246,6 +303,8 @@ int main() {
     delete waterplaneModel;
     delete carShader;
     delete waterplaneShader;
+    delete splashShader;
+
 
     glfwTerminate();
     return 0;
