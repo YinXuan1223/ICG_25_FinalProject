@@ -45,27 +45,30 @@ SplashSystem* splash = nullptr;
 // car status
 float car_speed      = 250.0f;               
 float car_turn_speed = glm::radians(90.0f);  
-glm::vec3 car_position = glm::vec3(0.0f);
+glm::vec3 car_position = glm::vec3(-30.0f, 0.0f, 0.0f);
 glm::vec3 car_velocity = glm::vec3(0.0f);
 float     car_rotation = 0.0f;         
 
+bool enableCarEffect = false;
 
 // mater status
 float mater_speed      = 150.0f;               
 float mater_turn_speed = glm::radians(90.0f);  
-glm::vec3 mater_position = glm::vec3(0.0f, 0.0f, 0.0f);
+glm::vec3 mater_position = glm::vec3(30.0f, 0.0f, 0.0f);
 glm::vec3 mater_velocity = glm::vec3(0.0f);
 float     mater_rotation = 0.0f;  
 
 // camera control
 float camYaw = 0.0f;
-float camPitch = glm::radians(0.0f); 
+float camPitch = glm::radians(5.0f); 
 float camDist  = 500.0f;
 float camTurnSpeed = glm::radians(90.0f);
 
 // About timing
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+
+
 
 void model_setup() {
 #if defined(__linux__) || defined(__APPLE__)
@@ -109,15 +112,17 @@ void shader_setup() {
     waterplaneShader->link_shader();
 
     // car shader
+    std::string gpath = shaderDir + "car.geom";
     vpath = shaderDir + "car.vert";
     fpath = shaderDir + "car.frag";
     carShader = new shader_program_t();
     carShader->create();
     carShader->add_shader(vpath, GL_VERTEX_SHADER);
     carShader->add_shader(fpath, GL_FRAGMENT_SHADER);
+    carShader->add_shader(gpath, GL_GEOMETRY_SHADER);
     carShader->link_shader();
 
-    std::string gpath = shaderDir + "splash.geom";
+    gpath = shaderDir + "splash.geom";
     vpath = shaderDir + "splash.vert";
     fpath = shaderDir + "splash.frag";
     splashShader = new shader_program_t();
@@ -173,6 +178,12 @@ void update() {
         splash->spawn(wheelL, currentFrame, 2);
         splash->spawn(wheelR, currentFrame, 2);
 
+        glm::vec3 mater_wheelL = mater_position + glm::vec3( 10.0f, 1.5f,  0.0f);
+        glm::vec3 mater_wheelR = mater_position + glm::vec3(-10.0f, 1.5f,  0.0f);
+
+        splash->spawn(mater_wheelL, currentFrame, 2);
+        splash->spawn(mater_wheelR, currentFrame, 2);
+
     }
 
     splash->cullDead(currentFrame);
@@ -203,6 +214,9 @@ void render() {
     carMatrix = glm::scale(carMatrix, glm::vec3(20.0f));
 
     carShader->use();
+    carShader->set_uniform_value("enableEffect", enableCarEffect);
+    carShader->set_uniform_value("time", (float)glfwGetTime());
+    carShader->set_uniform_value("cameraPos", camera.position);
     carShader->set_uniform_value("model", carMatrix);
     carShader->set_uniform_value("view", view);
     carShader->set_uniform_value("projection", projection);
@@ -217,6 +231,8 @@ void render() {
     materMatrix = glm::scale(materMatrix, glm::vec3(20.0f));
 
     carShader->use();
+    carShader->set_uniform_value("time", (float)glfwGetTime());
+    carShader->set_uniform_value("cameraPos", camera.position);
     carShader->set_uniform_value("model", materMatrix);
     carShader->set_uniform_value("view", view);
     carShader->set_uniform_value("projection", projection);
@@ -251,7 +267,7 @@ void render() {
     splashShader->set_uniform_value("projection", projection);
     splashShader->set_uniform_value("cameraPos", camera.position);
     splashShader->set_uniform_value("time", (float)glfwGetTime());
-    splashShader->set_uniform_value("life", 0.5f);
+    splashShader->set_uniform_value("life", 0.8f);
 
     splash->drawPoints();
 
@@ -268,6 +284,8 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
+    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
+        enableCarEffect = !enableCarEffect;
 
     // Camera IK / JL
     if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS)
