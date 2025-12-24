@@ -38,15 +38,30 @@ shader_program_t* splashShader     = nullptr;
 camera_t camera;
 
 Object*     carModel        = nullptr;
+Object*     materModel      = nullptr;
 WaterPlane* waterplaneModel = nullptr;
 SplashSystem* splash = nullptr;
 
 // car status
-float car_speed      = 150.0f;               
+float car_speed      = 250.0f;               
 float car_turn_speed = glm::radians(90.0f);  
 glm::vec3 car_position = glm::vec3(0.0f);
 glm::vec3 car_velocity = glm::vec3(0.0f);
-float     car_rotation = 0.0f;                
+float     car_rotation = 0.0f;         
+
+
+// mater status
+float mater_speed      = 150.0f;               
+float mater_turn_speed = glm::radians(90.0f);  
+glm::vec3 mater_position = glm::vec3(0.0f, 0.0f, 0.0f);
+glm::vec3 mater_velocity = glm::vec3(0.0f);
+float     mater_rotation = 0.0f;  
+
+// camera control
+float camYaw = 0.0f;
+float camPitch = glm::radians(0.0f); 
+float camDist  = 500.0f;
+float camTurnSpeed = glm::radians(90.0f);
 
 // About timing
 float deltaTime = 0.0f;
@@ -61,17 +76,22 @@ void model_setup() {
     std::string obj_path = "..\\..\\src\\asset\\obj\\LMQ.obj";
     std::string mtlbase_path = "..\\..\\src\\asset\\material\\";
     std::string texbase_path = "..\\..\\src\\asset\\texture\\LMQ\\";
+
+    std::string mater_obj_path = "..\\..\\src\\asset\\obj\\Mater.obj";
+    std::string mater_mtlbase_path = "..\\..\\src\\asset\\MT_material\\";  
+    std::string mater_texbase_path = "..\\..\\src\\asset\\texture\\MT\\";  
     std::string cube_obj_path = "..\\..\\src\\asset\\obj\\cube.obj";
 #endif
 
     carModel        = new Object(obj_path, mtlbase_path, texbase_path);
+    materModel      = new Object(mater_obj_path, mater_mtlbase_path, mater_texbase_path);
     waterplaneModel = new WaterPlane(1000, 50);
 }
 
 void camera_setup() {
     camera.worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
-    camera.position = glm::vec3(0.0f, 400.0f, 400.0f);
+    camera.position = glm::vec3(0.0f, 250.0f, 400.0f);
     camera.target   = glm::vec3(0.0f);
     camera.up       = glm::vec3(0.0f, 1.0f, 0.0f);
 }
@@ -124,6 +144,14 @@ void setup() {
     splash->init();
 }
 
+void updateCamera() {
+    glm::vec3 offset;
+    offset.x = camDist * cos(camPitch) * sin(camYaw);
+    offset.y = camDist * sin(camPitch);
+    offset.z = camDist * cos(camPitch) * cos(camYaw);
+
+    camera.position = camera.target + offset;
+}
 
 void update() {
     float currentFrame = glfwGetTime();
@@ -131,6 +159,9 @@ void update() {
     lastFrame = currentFrame;
 
     car_position += car_velocity * deltaTime;
+    mater_position += mater_velocity * deltaTime;
+
+    updateCamera();
 
     float waterY = 0.0f; 
     bool onWater = (car_position.y <= waterY + 0.05f);
@@ -179,6 +210,21 @@ void render() {
     carModel->draw();
     carShader->release();
 
+    // rendering mater
+    glm::mat4 materMatrix(1.0f);
+    materMatrix = glm::translate(materMatrix, mater_position);
+    materMatrix = glm::rotate(materMatrix, mater_rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+    materMatrix = glm::scale(materMatrix, glm::vec3(20.0f));
+
+    carShader->use();
+    carShader->set_uniform_value("model", materMatrix);
+    carShader->set_uniform_value("view", view);
+    carShader->set_uniform_value("projection", projection);
+    carShader->set_uniform_value("ourTexture", 0);
+    materModel->draw();
+    carShader->release();
+
+
     // rendering water
     glm::mat4 waterMatrix(1.0f);
     waterMatrix = glm::scale(waterMatrix, glm::vec3(200.0f, 1.0f, 200.0f));
@@ -222,11 +268,31 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
+
+    // Camera IK / JL
+    if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS)
+        camPitch += camTurnSpeed * deltaTime;
+    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+        camPitch -= camTurnSpeed * deltaTime;
+    if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
+        camYaw += camTurnSpeed * deltaTime;
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
+        camYaw -= camTurnSpeed * deltaTime;
+
+    camPitch = glm::clamp(camPitch, glm::radians(-89.0f), glm::radians(89.0f));
+
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
         car_rotation += car_turn_speed * deltaTime;
 
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         car_rotation -= car_turn_speed * deltaTime;
+
+
+    if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS)
+        mater_rotation += mater_turn_speed * deltaTime;
+
+    if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
+        mater_rotation -= mater_turn_speed * deltaTime;
 
 
     
@@ -235,13 +301,26 @@ void processInput(GLFWwindow *window) {
     forward.x = sin(car_rotation);
     forward = glm::normalize(forward);
 
+    glm::vec3 mater_forward;
+    mater_forward.z = cos(mater_rotation);
+    mater_forward.y = 0.0f;
+    mater_forward.x = sin(mater_rotation);
+    mater_forward = glm::normalize(mater_forward);
+
     car_velocity = glm::vec3(0.0f);
+    mater_velocity = glm::vec3(0.0f);
 
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         car_velocity += forward * car_speed;
 
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
         car_velocity -= forward * car_speed;
+
+    if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
+        mater_velocity += mater_forward * mater_speed;
+
+    if (glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS)
+        mater_velocity -= mater_forward * mater_speed;
 }
 
 
@@ -300,6 +379,7 @@ int main() {
     }
 
     delete carModel;
+    delete materModel;
     delete waterplaneModel;
     delete carShader;
     delete waterplaneShader;
